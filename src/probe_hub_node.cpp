@@ -15,8 +15,8 @@ float probe_angle = 0.0; // eventually increase to 30deg
 float rad_threshold = 0.1;
 
 // sample data
-std::vector<float> motorPosVector_sim = {-.06, -.059, -0.055, -.048};
-std::vector<double> sampleTime_sim = {2.5, 5.0, 7.5, 10.0};
+// std::vector<float> motorPosVector_sim = {-.06, -.059, -0.055, -.048};
+std::vector<double> sampleTime_sim = {5.0,10.0,15.0,20.0};
 std::vector<float> gantryXPos_sim = {0, .012, .024, .036};
 int sampleTime_step = 0;
 
@@ -34,7 +34,7 @@ circle mine;
 std::vector<point3D> contactPointsVector;
 
 // fwd declarations
-void updateContactPoints(); // adds to the vector of contact points, in gantry frame
+void updateContactPoints(float motorPos); // adds to the vector of contact points, in gantry frame
 point3D contactPointToGantryFrame(float& motorPos);
 circle calcCircle(std::vector<point2D>& points);
 float getGantryXPos(); // side to side position of gantry head
@@ -46,29 +46,31 @@ float calcRadius(point2D& cc, std::vector<point2D>& points);
 
 // }
 
-void probeDataClbk(const std_msgs::Bool& msg)
+void probeDataClbk(const std_msgs::Float32& msg)
+// void probeDataClbk(const std_msgs::Bool& msg)
 {
   // float motorPos = msg.data;
   // motorPosVector.push_back(motorPos);
   // for (auto it = motorPosVector.begin(); it!=motorPosVector.end(); it++)
   // {
-  //   // ROS_INFO("%f",*it);
+  // ROS_INFO("here");
   //   // std::cout<<*it<<std::endl;
   // }
   // std::endl;
   // float motorPos = 
 
-  if(msg.data){
-    updateContactPoints();
-    sampleTime_step++;
-  }
+  // if(msg.data){
+  updateContactPoints(msg.data);
+  sampleTime_step++;
+  // }
 }
 
-void updateContactPoints() // adds to the vector of contact points, in gantry frame
+// void updateContactPoints() // adds to the vector of contact points, in gantry frame
+void updateContactPoints(float motorPos) // adds to the vector of contact points, in gantry frame
 {
-  float motorPos = motorPosVector_sim[sampleTime_step];
+  // float motorPos = motorPosVector_sim[sampleTime_step];
   contactPointsVector.push_back(contactPointToGantryFrame(motorPos));
-      ROS_INFO("Number of sample points: %lu", contactPointsVector.size());
+  ROS_INFO("Number of sample points: %lu", contactPointsVector.size());
 
 }
 
@@ -96,20 +98,19 @@ bool isMine() // determines whether collection of points represents a circle (i.
     {
       mine = circle; // assign the calculated circle to the mine instance;
       ROS_INFO("Object is a mine with radius %f and center x=%f, y=%f",mine.rad,mine.center.x, mine.center.y);
-
       return true;
     }
     else 
     {
-            ROS_INFO("Object is not a mine");
+      ROS_INFO("Object is not a mine");
 
       return false;
     }
   }
   else
-                ROS_INFO("Not enough points for classification");
+    ROS_INFO("Not enough points for classification");
 
-    return false;
+  return false;
 }
 
 
@@ -216,11 +217,18 @@ float calcRadius(point2D& cc, std::vector<point2D>& points)
   return rHat / numPoints;
 }
 
-void probeCmdLogic(double elapsedTime)
+bool probeCmdLogic(double elapsedTime, bool lastState)
 {
-  if(elapsedTime>sampleTime_sim[sampleTime_step] && sampleTime_step<sampleTime_sim.size())
+  if(lastState){return false;}
+          // ROS_INFO("%f",sampleTime_sim[sampleTime_step]);
+  if(elapsedTime>sampleTime_sim[sampleTime_step] 
+    && sampleTime_step<sampleTime_sim.size())
   {
-    probe_cmd.data = true;
+    return true;
+  }
+  else
+  { 
+    return false;
   }
 }
 
@@ -229,19 +237,20 @@ int main(int argc, char **argv)
   ros::init(argc, argv, "probe_hub");
   ros::NodeHandle n;
   ros::Publisher begin_probe_pub = n.advertise<std_msgs::Bool>("begin_probe", 1000);
-  // ros::Subscriber probe_data_sub = n.subscribe("probe_data", 1000, probeDataClbk);
-  ros::Subscriber probe_data_returned_sub = n.subscribe("begin_probe", 1000, probeDataClbk);
+  ros::Subscriber probe_data_sub = n.subscribe("probe_data", 1000, probeDataClbk);
+  // ros::Subscriber probe_data_returned_sub = n.subscribe("begin_probe", 1000, probeDataClbk);
   ros::Rate loop_rate(2);
   double startTime = ros::Time::now().toSec();
-
+  bool lastState = false;
   while (ros::ok())
   {
     double currentTime = ros::Time::now().toSec();
     double elapsedTime = currentTime-startTime;
 
-    probeCmdLogic(elapsedTime);
+    probe_cmd.data = probeCmdLogic(elapsedTime,lastState);
     begin_probe_pub.publish(probe_cmd);
-    probe_cmd.data = false;
+    lastState = probe_cmd.data;
+
     isMine();
     // if(!isMine())
     // {
